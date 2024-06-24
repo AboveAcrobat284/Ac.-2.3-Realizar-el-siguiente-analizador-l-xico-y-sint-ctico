@@ -22,6 +22,7 @@ keywords = {
     'System.out.println': 'Palabra reservada'
 }
 
+# Análisis Léxico
 def lexical_analysis(code):
     result = []
     lines = code.split('\n')
@@ -60,31 +61,56 @@ def lexical_analysis(code):
 def syntactic_analysis(code):
     result = []
     lines = code.split('\n')
+    open_braces = 0  # Contador para llaves abiertas
     for line_number, line in enumerate(lines, start=1):
         stripped_line = line.strip()
-        if stripped_line.startswith('System.out.'):
-            if stripped_line.startswith('System.out.println'):
-                result.append((line_number, 'System.out.println', True))
+        if '{' in stripped_line:
+            open_braces += stripped_line.count('{')
+        if '}' in stripped_line:
+            open_braces -= stripped_line.count('}')
+            
+        if stripped_line.startswith('public'):
+            if ('class' in stripped_line or 'void' in stripped_line) and '{' in stripped_line:
+                result.append((line_number, stripped_line, True))
             else:
-                result.append((line_number, stripped_line.split('(')[0], False))
-        elif 'System' in stripped_line or '.out' in stripped_line:
-            result.append((line_number, stripped_line.split('(')[0], False))
-        else:
-            tokens = stripped_line.split()
-            if len(tokens) > 0:
-                if tokens[0] in keywords:
-                    result.append((line_number, tokens[0].capitalize(), True))
-                elif any(keyword in tokens[0] for keyword in keywords):
-                    result.append((line_number, tokens[0].capitalize(), False))
-                else:
-                    result.append((line_number, tokens[0], False))
+                result.append((line_number, stripped_line, False))
+        elif stripped_line.startswith('System.out.println'):
+            if '(' in stripped_line and ')' in stripped_line and stripped_line.endswith(';'):
+                result.append((line_number, stripped_line, True))
+            else:
+                result.append((line_number, stripped_line, False))
+        elif stripped_line == '}':
+            result.append((line_number, '}', True))  # Verificar contexto si es necesario
+
+    # Verificar si faltan llaves al finalizar el análisis
+    if open_braces != 0:
+        result.append(('Final', 'Desequilibrio de llaves', False))
+
     return result
+
+def semantic_analysis(code):
+    result = []
+    lines = code.split('\n')
+    for line_number, line in enumerate(lines, start=1):
+        if 'public' in line:
+            if 'class' in line or 'void' in line:
+                result.append((line_number, line.strip(), True))
+            else:
+                result.append((line_number, line.strip(), False))
+        elif 'System.out.println' in line:
+            if '(' in line and ')' in line and ';' in line:
+                result.append((line_number, line.strip(), True))
+            else:
+                result.append((line_number, line.strip(), False))
+    return result
+
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     code = ""
     lexical_result = []
     syntactic_result = []
+    semantic_result = []
     if request.method == 'POST':
         if 'file' in request.files and request.files['file'].filename != '':
             file = request.files['file']
@@ -99,6 +125,7 @@ def index():
         
         lexical_result = lexical_analysis(code)
         syntactic_result = syntactic_analysis(code)
+        semantic_result = semantic_analysis(code)
         
     return render_template_string("""
     <!DOCTYPE html>
@@ -198,10 +225,10 @@ def index():
                 background-color: #fffd00;
             }
         </style>
-        <title>Analizador Léxico y Sintáctico</title>
+        <title>Analizador Léxico, Sintáctico y Semántico</title>
     </head>
     <body>
-        <h1>Analizador Léxico y Sintáctico</h1>
+        <h1>Analizador Léxico, Sintáctico y Semántico</h1>
         <form method="POST" enctype="multipart/form-data">
             <label for="file">Subir Archivo:</label>
             <input type="file" name="file"><br><br>
@@ -251,9 +278,29 @@ def index():
             {% endfor %}
         </table>
         {% endif %}
+
+        {% if semantic_result %}
+        <h2>Análisis Semántico</h2>
+        <table>
+            <tr>
+                <th>Linea</th>
+                <th>Tipo de Estructura</th>
+                <th>Estructura Correcta</th>
+                <th>Estructura Incorrecta</th>
+            </tr>
+            {% for line in semantic_result %}
+            <tr>
+                <td>{{ line[0] }}</td>
+                <td>{{ line[1] }}</td>
+                <td>{% if line[2] %}X{% endif %}</td>
+                <td>{% if not line[2] %}X{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% endif %}
     </body>
     </html>
-    """, code=code, lexical_result=lexical_result, syntactic_result=syntactic_result)
+    """, code=code, lexical_result=lexical_result, syntactic_result=syntactic_result, semantic_result=semantic_result)
 
 if __name__ == '__main__':
     app.run(debug=True)
